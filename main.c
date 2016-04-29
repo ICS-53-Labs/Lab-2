@@ -6,7 +6,7 @@
 /* TODO: 
  * Output Format Issues - Especially when a background processes outputs
  * Test more thoroughly
- * Remove debugging prints when done
+ * Remove DEBUGging prints when done
  * Rename file to Lab2_ID1_ID2
  * Alex adds his name and ID
  */
@@ -15,55 +15,65 @@
 #include <string.h>
 #include <signal.h>
 
- 
+//Array size values
 #define MAX_CMD_LINE 80
 #define MAX_ARGS 3
 
+//Char. and Token values
 #define BACKGROUND_SET '&'
 #define TOKEN_DELIM " \t"
 
+//Built-in Command values
 #define QUIT "quit"
 #define ZNUM "znum"
 
+//Debug Set
+#define DEBUG 0
+
 //Function Prototypes
+/* Eval evaluates the cmdline input, creating child processes,
+ * executing files, waiting and reaping proceses
+ */
 void eval (char* cmdline);
+/* parseLine parses the cmdline input into ARGS,
+ * determines whether it is background or foreground
+ */
 int parseLine (char* cmdline, char* argv[MAX_ARGS]);
+/* builtinCommand determines which builtin command is specified, if any
+ * executes the built in command if needed
+ * QUIT kills and reaps remaining children before exiting
+ */
 int builtInCommand (char* argv[MAX_ARGS]);
+/* Signal handler for SIGCHILD
+ * Called whenever a Child terminates
+ * Reaps all terminated background children
+ * However, it is also called when a foreground child terminates
+ * Because it does not block the parent process and the foreground child is already dead
+ * , it has no effect
+ */
 void signalHandler (int sig);
 
 //Global variable count for non-reaped children
 int numChild;
 
 int main (void) {
-	printf ("Main pid: %d\n",getpid ());
+	if (DEBUG) printf ("Main pid: %d\n",getpid ());
 	char cmdline[MAX_CMD_LINE];
-	numChild = 0;
+	numChild = 0; /* Initialize the global variable */
+	//Install Signal Handler
 	if (signal (SIGCHLD,&signalHandler) == SIG_ERR) {
 		printf ("Signal Error\n");
 	}
 	while (1) {
-		printf ("PROMPT> ");
-		if (!fgets (cmdline,MAX_CMD_LINE,stdin)) {
+		printf ("PROMPT> "); /* Ask for prompt */
+		if (!fgets (cmdline,MAX_CMD_LINE,stdin)) { /* Grab input */
 			printf ("Fgets error\n");
 		}
 		if (feof (stdin)) {
 			exit (0);
 		}
-		/*
-		printf ("cmdline: %s\n",cmdline);
-		char* argv [MAX_ARGS];
-		int i = parseLine(cmdline,argv);
-		printf ("Parse: %d\n",i);
-		int j = 0;
-		while (argv[j] != NULL) {
-		printf ("argv @ %d: %s\n",j,argv[j]);
-		++j;
-		}
-		int r = builtInCommand (argv);
-		printf ("r: %d\n",r);
-		*/
-		eval (cmdline);
-		sleep (1);
+		eval (cmdline); /* Eval input */
+		sleep (1); /* small delay so that it does not mess up output format */
 	}
 	return 0;
 }
@@ -73,41 +83,32 @@ int main (void) {
 	int bg;
 	pid_t pid; //Maybe array
 
-	bg = parseLine (cmdline, argv);
-	/*
-	printf ("Arguments:\n");
-	int j = 0;
-	while (argv[j] != NULL) {
-	 printf ("argv @ %d: %s\n",j,argv[j]);
-	 ++j;
-	}
-	*/
-	if (!builtInCommand (argv)) {
-		if ((pid = fork ()) == 0) {
-			printf ("CHILD: Created %d\n",getpid ());
-			if (execv (argv[0],argv) < 0) {
+	bg = parseLine (cmdline, argv); /* Parse input command line */
+	if (!builtInCommand (argv)) { /* Not Built in */
+		if ((pid = fork ()) == 0) { /* Create child process */
+			if (DEBUG) printf ("CHILD: Created %d\n",getpid ());
+			if (execv (argv[0],argv) < 0) { /* Execute file */
 				printf ("%s: Command not found.\n",argv[0]);
 				exit (0);
 			}
 		}
 		else {
-			++numChild;
-			printf ("PARENT: %d has Child %d\n",getpid(),pid);
+			++numChild; /* Increase the number of children processes */
+			if (DEBUG) printf ("PARENT: %d has Child %d\n",getpid(),pid);
 		}
-		if (!bg) {
-			 
+		if (!bg) { /* Foreground */
 			int status;
-			if (waitpid (pid,&status,0) < 0) {
+			if (waitpid (pid,&status,0) < 0) { /* Have parent wait for child */
 				//unix_error ("waitfg: waitpid error");
 				printf ("PARENT: waitpid error by parent in foreground\n");
 			}
 			else {
-				--numChild;
-				printf ("PARENT: Child %d reaped in foreground\n",pid);
+				--numChild; /* Wait reaps child on termination, thus decrease */
+				if (DEBUG) printf ("PARENT: Child %d reaped in foreground\n",pid);
 			}
 		}
-		else {
-			printf ("PARENT: Background Child %d, Executing %s\n",pid,cmdline);
+		else { /* If background, do nothing and continue */
+			if (DEBUG) printf ("PARENT: Background Child %d, Executing %s\n",pid,cmdline);
 		}
 	}
  }
@@ -123,16 +124,15 @@ int parseLine (char* cmdline, char* argv[MAX_ARGS]) {
 	while (cmdline[i] != '\0') {
 		++i;
 	}
-	//printf ("size of cmdline:%d\n",i);
+	
 	//From the end, find the first non-whitespace characters
 	--i; //Ignore null
 	cmdline[i] = '\0';
 	--i; //Ignore carriage return
+	//Check last char for &: ... Arg& or ... Arg &
 	while (cmdline[i] == ' ' || cmdline[i] == '\t') {
-		//printf ("char: %c\n",cmdline[i]);
 		--i;
 	}
-	//printf ("first nonc:%c, %d\n",cmdline[i],i);
 	if (cmdline[i] == BACKGROUND_SET) {
 		bg = 1;
 		cmdline[i] = '\0'; //Remove the ampersand
@@ -141,45 +141,45 @@ int parseLine (char* cmdline, char* argv[MAX_ARGS]) {
 	//Parse into tokens
 	i = 0;
 	argv[i] = strtok (cmdline,delim);
-	//printf ("Token @ %d: %s\n",i,argv[i]);
 	while (argv[i] != NULL) {
 		if (i >= MAX_ARGS - 1) {
-			//printf ("%d >= %d\n",i,MAX_ARGS - 1);
 			argv[i] = NULL;
 			break;
 		}
 		argv[++i] = strtok (NULL,delim);
-		//printf ("Token @ %d: %s\n",i,argv[i]);
 	}
-	//Check last char for &: ... Arg& or ... Arg &
-	/*
-	char* last = argv[i - 1];
-	//printf ("Last %s\n",last);
-	i = 0;
-	while (last[i] != '\0') {
-	++i;
-	}
-	//printf ("Last C:%c ''\n",last[i - 2]);
-	if (last[i - 2] == '&') {
-	return 1;
-	}
-	else {
-	return 0;
-	}
-	*/
 	return bg;
 }
 
 int builtInCommand (char* argv[MAX_ARGS]) {
-	if (!strcmp (argv[0], QUIT)) {
-		//Terminate and reap background processes OR 
-		//do not quit until all background processes are done
+	if (!strcmp (argv[0], QUIT)) { /* QUIT */
+		//If there are remaining child processes
 		if (numChild > 0) {
-			printf ("MAIN: Child processes not yet reaped: %d\n",numChild);
+			if (DEBUG) printf ("MAIN: Child processes not yet reaped: %d\n",numChild);
+			if (DEBUG) printf ("MAIN: Killing and reaping remaining child processes\n");
+			//Kill all children but not parent
+			signal(SIGQUIT,SIG_IGN);
+			if (kill (0,SIGQUIT) < 0) {
+				printf ("MAIN: Error killing all children\n");
+			}
+			//Reap all zombie children
+			int status;
+			while (numChild > 0) {
+				int res = waitpid (-1,&status,0);
+				if (res > 0) {
+					if (DEBUG) printf ("MAIN: Child %d reaped with status %d\n",res,status);
+					--numChild;
+				}
+				else {
+					printf ("MAIN: Waitpid Error\n");
+				}
+			}
 		}
+		//By now, all children should be terminated and reaped
+		if (DEBUG) printf ("MAIN: Remaining children: %d\n",numChild);
 		exit (0);
 	}
-	else if (!strcmp (argv[0], ZNUM)) {
+	else if (!strcmp (argv[0], ZNUM)) { /* ZNUM to check number of non-reaped children */
 		printf ("MAIN: Number of potential zombie child processes (not yet reaped): %d\n",numChild);
 		return 1;
 	}
@@ -189,18 +189,19 @@ int builtInCommand (char* argv[MAX_ARGS]) {
 }
 
 void signalHandler (int sig) {
-	printf ("PARENT: Handling signal %d\n",sig);
+	if (DEBUG) printf ("PARENT: Handling signal %d\n",sig);
 	int status;
 	int res = waitpid (-1,&status,WNOHANG);
 	if (res < 0) {
-		//printf ("Child %d exited with status %d\n",res,status);
-		//printf ("waitpid error\n");
+		//printf ("PARENT: Child %d exited with status %d\n",res,status);
 	}
+	//While Loop so that in case a new child termination signal 
+	//is sent while reaping, it can reap that one too
 	while (res > 0) {
 		--numChild;
-		printf ("PARENT: Child %d exited with status %d\n",res,status);
-		printf ("PARENT: Child %d reaped in background\n",res);
-		res = waitpid (-1,&status,WNOHANG);
+		if (DEBUG) printf ("PARENT: Child %d exited with status %d\n",res,status);
+		if (DEBUG) printf ("PARENT: Child %d reaped in background\n",res);
+		res = waitpid (-1,&status,WNOHANG); /* WNOHANG option so that it does not block the parent */
 	}
 }
  

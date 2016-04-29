@@ -115,11 +115,7 @@ int parseLine (char* cmdline, char* argv[MAX_ARGS]) {
 	const char delim[3] = TOKEN_DELIM;
 	int bg = 0;
 	//Find size of cmdline
-	int i = 0;
-	while (cmdline[i] != '\0') {
-		++i;
-	}
-	
+	int i = strlen (cmdline);
 	//From the end, find the first non-whitespace characters
 	--i; //Ignore null
 	cmdline[i] = '\0';
