@@ -1,126 +1,208 @@
 //Change name of this file to: Lab2_ID1_ID2.c"
 //"lastname, firstname: studentid"
-//My name
-//Alex's name
+//Park, Joseph: 24136956
+//ALEX NAME, ID
  
- #include <stdio.h>
- #include <stdlib.h>
- #include <string.h>
- #include <signal.h>
+/* TODO: 
+ * Output Format Issues - Especially when a background processes outputs
+ * Test more thoroughly
+ * Remove debugging prints when done
+ * Rename file to Lab2_ID1_ID2
+ * Alex adds his name and ID
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <signal.h>
 
  
- #define MAX_CMD_LINE 80
- #define MAX_ARGS 5
- 
- #define QUIT "quit"
- 
- //Function Prototypes
- void eval (char* cmdline);
- int parseLine (char* cmdline, char* argv[MAX_ARGS]);
- int builtInCommand (char* argv[MAX_ARGS]);
- void signalHandler (int sig);
- 
- int main (void) {
-	 printf ("This is the process id: %d\n",getpid ());
-	 char cmdline[MAX_CMD_LINE];
-	 
-	 signal (SIGCHLD,&signalHandler);
-	 while (1) {
-		 printf ("Prompt> ");
-		 if (!fgets (cmdline,MAX_CMD_LINE,stdin)) {
-			 printf ("Fgets error\n");
-		 }
-		 if (feof (stdin)) {
-			 exit (0);
-		 }
-		 printf ("%s\n",cmdline);
-		 char* argv [MAX_ARGS];
-		 int i = parseLine(cmdline,argv);
-		 printf ("Parse: %d\n",i);
-		 //eval (cmdline);
-	 }
-	 return 0;
- }
+#define MAX_CMD_LINE 80
+#define MAX_ARGS 3
+
+#define BACKGROUND_SET '&'
+#define TOKEN_DELIM " \t"
+
+#define QUIT "quit"
+#define ZNUM "znum"
+
+//Function Prototypes
+void eval (char* cmdline);
+int parseLine (char* cmdline, char* argv[MAX_ARGS]);
+int builtInCommand (char* argv[MAX_ARGS]);
+void signalHandler (int sig);
+
+//Global variable count for non-reaped children
+int numChild;
+
+int main (void) {
+	printf ("Main pid: %d\n",getpid ());
+	char cmdline[MAX_CMD_LINE];
+	numChild = 0;
+	if (signal (SIGCHLD,&signalHandler) == SIG_ERR) {
+		printf ("Signal Error\n");
+	}
+	while (1) {
+		printf ("PROMPT> ");
+		if (!fgets (cmdline,MAX_CMD_LINE,stdin)) {
+			printf ("Fgets error\n");
+		}
+		if (feof (stdin)) {
+			exit (0);
+		}
+		/*
+		printf ("cmdline: %s\n",cmdline);
+		char* argv [MAX_ARGS];
+		int i = parseLine(cmdline,argv);
+		printf ("Parse: %d\n",i);
+		int j = 0;
+		while (argv[j] != NULL) {
+		printf ("argv @ %d: %s\n",j,argv[j]);
+		++j;
+		}
+		int r = builtInCommand (argv);
+		printf ("r: %d\n",r);
+		*/
+		eval (cmdline);
+		sleep (1);
+	}
+	return 0;
+}
  
  void eval (char* cmdline) {
-	 char* argv [MAX_ARGS];
-	 int bg;
-	 pid_t pid; //Maybe array
-	 
-	 bg = parseLine (cmdline, argv);
-	 if (!builtInCommand (argv)) {
-		 if ((pid = fork ()) == 0) {
-			 if (execv (argv[0],argv) < 0) {
-				 printf ("%s: Command not found.\n",argv[0]);
-				 exit (0);
-			 }
-		 }
-	 }
-	 if (!bg) {
-		 int status;
-		 if (waitpid (pid,&status,0) < 0) {
-			 //unix_error ("waitfg: waitpid error");
-		 }
-	 }
-	 else {
-		 printf ("%d %s",pid,cmdline);
-	 }
+	char* argv [MAX_ARGS];
+	int bg;
+	pid_t pid; //Maybe array
+
+	bg = parseLine (cmdline, argv);
+	/*
+	printf ("Arguments:\n");
+	int j = 0;
+	while (argv[j] != NULL) {
+	 printf ("argv @ %d: %s\n",j,argv[j]);
+	 ++j;
+	}
+	*/
+	if (!builtInCommand (argv)) {
+		if ((pid = fork ()) == 0) {
+			printf ("CHILD: Created %d\n",getpid ());
+			if (execv (argv[0],argv) < 0) {
+				printf ("%s: Command not found.\n",argv[0]);
+				exit (0);
+			}
+		}
+		else {
+			++numChild;
+			printf ("PARENT: %d has Child %d\n",getpid(),pid);
+		}
+		if (!bg) {
+			 
+			int status;
+			if (waitpid (pid,&status,0) < 0) {
+				//unix_error ("waitfg: waitpid error");
+				printf ("PARENT: waitpid error by parent in foreground\n");
+			}
+			else {
+				--numChild;
+				printf ("PARENT: Child %d reaped in foreground\n",pid);
+			}
+		}
+		else {
+			printf ("PARENT: Background Child %d, Executing %s\n",pid,cmdline);
+		}
+	}
  }
  
- int parseLine (char* cmdline, char* argv[MAX_ARGS]) {
-	 //Parse into tokens
-	 const char delim[3] = " \t";
-	 int i = 0;
-	 //argv is always ended with a NULL
-	 argv[i] = strtok (cmdline,delim);
-	 printf ("Token @ %d: %s\n",i,argv[i]);
-	 while (argv[i] != NULL) {
-		 if (i + 1 >= MAX_ARGS - 1) {
-			 printf ("%d >= %d\n",i + 1,MAX_ARGS - 1);
-			 argv[i] = NULL;
-			 break;
-		 }
-		 argv[++i] = strtok (NULL,delim);
-		 printf ("Token @ %d: %s\n",i,argv[i]);
-	 }
-	 //Check last char for &: ... Arg& or ... Arg &
-	 char* last = argv[i - 1];
-	 printf ("Last %s\n",last);
-	 i = 0;
-	 while (last[i] != '\0') {
-		 ++i;
-	 }
-	 printf ("Last C:%c ''\n",last[i - 2]);
-	 if (last[i - 2] == '&') {
-		 return 1;
-	 }
-	 else {
-		 return 0;
-	 }
- }
- 
- int builtInCommand (char* argv[MAX_ARGS]) {
-	 if (!strcmp (argv[0], QUIT)) {
-		 //Terminate and reap background processes OR 
-		 //do not quit until all background processes are done
-		 exit (0);
-	 }
-	 else {
-		 return 0;
-	 }
- }
- 
- void signalHandler (int sig) {
-	 //safe_printf ("Handling signal %d\n",sig);
-	 int status;
-	 int res = waitpid (-1,&status,WNOHANG);
-	 if (res < 0) {
-		 //safe_printf ("waitpid error\n");
-	 }
-	 else {
-		 
-	 }
- }
+//Tokenizes cmdline into argv based on whitespace delimiters.
+//Checks for & at the end of input no matter what
+//There is a limit to the number of tokens that can be stored
+int parseLine (char* cmdline, char* argv[MAX_ARGS]) {
+	const char delim[3] = TOKEN_DELIM;
+	int bg = 0;
+	//Find size of cmdline
+	int i = 0;
+	while (cmdline[i] != '\0') {
+		++i;
+	}
+	//printf ("size of cmdline:%d\n",i);
+	//From the end, find the first non-whitespace characters
+	--i; //Ignore null
+	cmdline[i] = '\0';
+	--i; //Ignore carriage return
+	while (cmdline[i] == ' ' || cmdline[i] == '\t') {
+		//printf ("char: %c\n",cmdline[i]);
+		--i;
+	}
+	//printf ("first nonc:%c, %d\n",cmdline[i],i);
+	if (cmdline[i] == BACKGROUND_SET) {
+		bg = 1;
+		cmdline[i] = '\0'; //Remove the ampersand
+	} 
+	//argv is always ended with a NULL
+	//Parse into tokens
+	i = 0;
+	argv[i] = strtok (cmdline,delim);
+	//printf ("Token @ %d: %s\n",i,argv[i]);
+	while (argv[i] != NULL) {
+		if (i >= MAX_ARGS - 1) {
+			//printf ("%d >= %d\n",i,MAX_ARGS - 1);
+			argv[i] = NULL;
+			break;
+		}
+		argv[++i] = strtok (NULL,delim);
+		//printf ("Token @ %d: %s\n",i,argv[i]);
+	}
+	//Check last char for &: ... Arg& or ... Arg &
+	/*
+	char* last = argv[i - 1];
+	//printf ("Last %s\n",last);
+	i = 0;
+	while (last[i] != '\0') {
+	++i;
+	}
+	//printf ("Last C:%c ''\n",last[i - 2]);
+	if (last[i - 2] == '&') {
+	return 1;
+	}
+	else {
+	return 0;
+	}
+	*/
+	return bg;
+}
+
+int builtInCommand (char* argv[MAX_ARGS]) {
+	if (!strcmp (argv[0], QUIT)) {
+		//Terminate and reap background processes OR 
+		//do not quit until all background processes are done
+		if (numChild > 0) {
+			printf ("MAIN: Child processes not yet reaped: %d\n",numChild);
+		}
+		exit (0);
+	}
+	else if (!strcmp (argv[0], ZNUM)) {
+		printf ("MAIN: Number of potential zombie child processes (not yet reaped): %d\n",numChild);
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
+
+void signalHandler (int sig) {
+	printf ("PARENT: Handling signal %d\n",sig);
+	int status;
+	int res = waitpid (-1,&status,WNOHANG);
+	if (res < 0) {
+		//printf ("Child %d exited with status %d\n",res,status);
+		//printf ("waitpid error\n");
+	}
+	while (res > 0) {
+		--numChild;
+		printf ("PARENT: Child %d exited with status %d\n",res,status);
+		printf ("PARENT: Child %d reaped in background\n",res);
+		res = waitpid (-1,&status,WNOHANG);
+	}
+}
  
 /* Process
 INITIALIZE:
